@@ -105,7 +105,7 @@ app.post("/api/users/:_id?/exercises", function (req, res) {
   const USER = userModel;
 
   USER.findOne({ _id: id }).then((data) => {
-    if (data.length === 0) {
+    if (!data) {
       res.json({ message: "User is not found" });
     } else {
       let body = new exerciseModel({
@@ -118,7 +118,13 @@ app.post("/api/users/:_id?/exercises", function (req, res) {
       body.save((err, exercise) => {
         if (!err) {
           console.log("success", "Exercise added successfully!");
-          return res.json(exercise);
+          return res.json({
+            username: exercise['username'],
+            description: exercise['description'],
+            duration: exercise['duration'],
+            _id: exercise['_id'],
+            date: exercise['date'].toDateString(),
+          });
         } else {
           console.log("Error", err);
           return res.send(err);
