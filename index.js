@@ -1,139 +1,120 @@
-require("dotenv").config();
-
-const express = require("express");
-const app = express();
-const cors = require("cors");
-const bodyParser = require("body-parser");
-
-const userModel = require('./models/userModel')
-const exerciseModel = require('./models/exerciseModel')
-const logModel = require('./models/logModel')
-
+const express = require('express')
+const app = express()
+const cors = require('cors')
+require('dotenv').config()
+const bodyParser = require('body-parser')
 const mongoose = require("mongoose");
-mongoose.connect(process.env.ATLAS_URI, { useNewUrlParser: true });
-const connection = mongoose.connection;
-connection.once("open", () => {
-  console.log("MongoDB database connection established successfully");
+const { Schema } = require("mongoose");
+
+const exercise = {
+  description: { type: String, required: true },
+  duration: { type: Number, required: true },
+  date: { type: String, required: true }
+}
+
+const personSchema = new Schema({
+  username: {
+    type: String,
+    required: true
+  },
+  count: Number,
+  exercise: {
+    type: Array,
+    value: exercise
+  }
 });
 
-// const urlMOdel('require')
+const Person = mongoose.model('Person', personSchema);
+const URL = process.env.ATLAS_URI;
+mongoose.connect(URL);
 
-app.use(cors());
-app.use(express.static("public"));
-
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: true}));
-
-app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/views/index.html");
+app.use(cors())
+app.use(express.static('public'))
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/views/index.html')
 });
 
-app.get("/api/users", function (req, res) {
-  const user = userModel;
+app.use(bodyParser.urlencoded({ extended: false }));
 
-  user.find((err, data) => {
-    return res.json(data);
+app.route('/api/users')
+  .post((req, res) => {
+    let a = req.body.username;
+    let person = new Person({ username: a, count: 0 });
+    person.save(function(err, data) {
+      res.json({ "username": data.username, "_id": data._id });
+    })
   })
+  .get((req, res) => {
+    Person.find((err, data) =>
+      res.json(data))
+  });
 
-})
-
-app.get("/api/users/:_id/logs", function (req, res) {
-  const id = req.params._id;
-
-  const USER = userModel;
-
-  USER.findOne({ _id: id }).then((user) => {
-    if (user.length === 0) {
-      res.json({ message: "User is not found" });
+app.post('/api/users/:_id/exercises', (req, res) => {
+  Person.findById(req.params._id, (err, data) => {
+    let datt = '';
+   
+    if (!req.body.date) {
+      datt = (new Date()).toDateString();
     } else {
-      const EXERCISE = exerciseModel;
-
-      EXERCISE.find({username: user['username']}).then((logs) => {
-        let logsArray = [];
-        
-        for (let i = 0; i < logs.length; i++) {
-          logsArray.push({
-            "description": logs[i]["description"],
-            "duration": logs[i]["duration"],
-            "date": logs[i]["date"].toDateString()
-          })
-        }
-        res.json({
-          username: user['username'],
-          count: logs.length,
-          _id: user['_id'],
-          log: logsArray,
-        });
-      })
+      datt = (new Date(req.body.date)).toDateString();
     }
-  });
-})
+  
+    exercise.description = req.body.description;
+    exercise.duration = parseInt(req.body.duration);
+    exercise.date = datt;
+    data.count = data.count + 1;
+    data.exercise.unshift(exercise);
+    data.save();
 
-app.post("/api/users", function (req, res) {
-  let username = req.body["username"];
-
-  let body = new userModel({
-    username: username
-  });
-
-  body.save((err, data) => {
-    if (!err) {
-      console.log("success", "User added successfully!");
-      return res.json({
-        username: data["username"],
-        _id: data['_id'],
-      });
-    } else {
-      console.log("Error", err);
-      return res.send(err);
-    }
-  });
-
+    res.send({
+      "_id": data._id,
+      "username": data.username,
+      'date': exercise.date,
+      'duration': exercise.duration,
+      'description': exercise.description
+    });  
+  });   
 });
 
-app.post("/api/users/:_id?/exercises", function (req, res) {
-  const id = req.params._id;
-  const descrip = req.body['description'];
-  const duration = req.body['duration'];
-  const logDate = req.body['date'];
-
-  // if (logDate.length !== 0) {
-  //   var today = new Date();
-  //   console.log(today)
-  // }
-
-  const USER = userModel;
-
-  USER.findOne({ _id: id }).then((data) => {
-    if (!data) {
-      res.json({ message: "User is not found" });
-    } else {
-      let body = new exerciseModel({
-        username: data['username'],
-        description: descrip,
-        duration: duration,
-        ...(logDate.length != 0) && {date: new Date(logDate)},
-      })
-
-      body.save((err, exercise) => {
-        if (!err) {
-          console.log("success", "Exercise added successfully!");
-          return res.json({
-            username: exercise['username'],
-            description: exercise['description'],
-            duration: exercise['duration'],
-            _id: exercise['_id'],
-            date: exercise['date'].toDateString(),
-          });
-        } else {
-          console.log("Error", err);
-          return res.send(err);
-        }
-      });
+app.get('/api/users/:_id/logs', (req, res) => {
+  Person.findById(req.params._id, (err, data) => {
+    let limit = data.exercise.length;
+    let from = '1970-01-01';
+    let to = '2038-01-18';
+    
+    if (typeof req.query.from != 'undefined') {
+      from = req.query.from;
     }
-  });
-})
+    
+    if (typeof req.query.to != 'undefined') { 
+      to = req.query.to;
+    }
+    
+    if (typeof req.query.limit != 'undefined') { 
+      limit = parseInt(req.query.limit);
+    }
+
+    let fromF = new Date(from).toDateString();
+    let toF = new Date(to).toDateString();
+
+    let ans = data.exercise.filter(q => new Date(q.date).getTime() >= new Date(from).getTime() && new Date(q.date).getTime() < new Date(to).getTime());
+
+    let resp = {
+      "_id": req.params._id,
+      "username": data.username
+    };
+
+    if (from != '1970-01-01') resp.from = fromF;
+    if (to != '2038-01-18') resp.to = toF;
+
+    resp.count = ans.slice(0, limit).length;
+    resp.log = ans.slice(0, limit);
+    
+    res.json(resp);
+  });    
+});
+
 
 const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log("Your app is listening on port " + listener.address().port);
-});
+  console.log('Your app is listening on port ' + listener.address().port)
+})
